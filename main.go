@@ -1,10 +1,11 @@
 package main
 
 import (
-	"html/template"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/go-github/github"
@@ -15,6 +16,7 @@ import (
 var (
 	token  string
 	orgID  int64
+	port   int
 	client *github.Client
 	router *gin.Engine
 )
@@ -33,6 +35,12 @@ func main() {
 		log.Fatalf("Invalid ORG_ID environment variable: %v", err)
 	}
 
+	portStr := os.Getenv("PORT")
+	port, err = strconv.Atoi(portStr)
+	if err != nil {
+		log.Fatalf("Invalid PORT environment variable: %v", err)
+	}
+
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
@@ -40,21 +48,25 @@ func main() {
 	client = github.NewClient(tc)
 
 	router = gin.Default()
-	router.LoadHTMLGlob("templates/*")
 
 	router.GET("/", indexHandler)
 	router.POST("/add", addHandler)
 
-	log.Fatal(router.Run(":8080"))
+	log.Printf("Starting server on port %d", port)
+	log.Fatal(router.Run(fmt.Sprintf(":%d", port)))
 }
 
 func indexHandler(c *gin.Context) {
-	c.HTML(http.StatusOK, "index.html", nil)
+	c.String(http.StatusOK, "Hello, World!")
 }
 
 func addHandler(c *gin.Context) {
 	username := c.PostForm("github")
-	_, _, err := client.Organizations.AddOrgMembership(orgID, username, nil)
+	invitationOpt := &github.OrgInvitationOpt{
+		InviteeID: &username,
+		Role:      github.String("direct_member"),
+	}
+	_, _, err := client.Organizations.CreateOrgInvitation(orgID, invitationOpt)
 	if err != nil {
 		log.Printf("Error adding user %s to organization: %v", username, err)
 		c.String(http.StatusInternalServerError, "Error adding user to organization")
